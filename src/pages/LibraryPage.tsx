@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Header from '../components/Header'
+import { useAuth } from '../lib/auth'
 import { isDue } from '../lib/cards'
 import { pdfToMarkdown } from '../lib/pdfToMarkdown'
 import {
@@ -49,13 +50,21 @@ export default function LibraryPage({ settings, update }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const { session, notice, clearNotice } = useAuth()
 
   const refresh = useCallback(async () => {
-    const list = await listBooks()
-    setBooks(list)
-    const entries = await Promise.all(list.map(async (b) => [b.id, (await getProgress(b.id)).pos / Math.max(1, b.wordCount)] as const))
-    setProgress(Object.fromEntries(entries))
-    setDue((await listCards()).filter((c) => isDue(c)).length)
+    try {
+      const list = await listBooks()
+      setBooks(list)
+      const entries = await Promise.all(list.map(async (b) => [b.id, (await getProgress(b.id)).pos / Math.max(1, b.wordCount)] as const))
+      setProgress(Object.fromEntries(entries))
+      setDue((await listCards()).filter((c) => isDue(c)).length)
+    } catch (e) {
+      setError(`Bibliothek konnte nicht geladen werden: ${e instanceof Error ? e.message : e}`)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -87,6 +96,7 @@ export default function LibraryPage({ settings, update }: Props) {
   async function save(p: Pending) {
     const parsed = parseMarkdown(p.markdown)
     if (parsed.wordCount < 10) throw new Error('In der Datei wurde kaum Text gefunden.')
+    setBusy(session ? 'Buch wird in dein Konto hochgeladen …' : 'Buch wird gespeichert …')
     await addBook(
       {
         id: crypto.randomUUID(),
@@ -99,12 +109,17 @@ export default function LibraryPage({ settings, update }: Props) {
       p.markdown,
     )
     setPending(null)
+    setBusy(null)
     await refresh()
   }
 
   async function remove(b: BookMeta) {
     if (!confirm(`„${b.title}“ wirklich aus der Bibliothek entfernen?`)) return
-    await deleteBook(b.id)
+    try {
+      await deleteBook(b.id)
+    } catch (e) {
+      setError(`Entfernen fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+    }
     await refresh()
   }
 
@@ -117,6 +132,14 @@ export default function LibraryPage({ settings, update }: Props) {
     <div className="page">
       <Header settings={settings} update={update} dueCards={due} />
       <main className="container">
+        {notice && (
+          <div className="notice">
+            <span>{notice}</span>
+            <button className="ghost small" onClick={clearNotice}>
+              OK
+            </button>
+          </div>
+        )}
         <section className="intro">
           <h1>Deine Bibliothek</h1>
           <p className="muted">Lade ein Buch als PDF oder Markdown hoch und lies es mit der 8-Sync-Technik: Wortgruppen im Takt, mit Vorschau, Abruf-Fragen und Lernkarten, damit mehr hängen bleibt.</p>
@@ -161,7 +184,17 @@ export default function LibraryPage({ settings, update }: Props) {
             </p>
             <pre className="md-preview">{pending.markdown.slice(0, 2500)}</pre>
             <div className="row">
-              <button onClick={() => save(pending).catch((e) => setError(String(e.message ?? e)))}>In Bibliothek speichern</button>
+              <button
+                disabled={!!busy}
+                onClick={() =>
+                  save(pending).catch((e) => {
+                    setBusy(null)
+                    setError(String(e.message ?? e))
+                  })
+                }
+              >
+                In Bibliothek speichern
+              </button>
               <button className="ghost" onClick={() => downloadMarkdown(pending.title, pending.markdown)}>
                 .md herunterladen
               </button>
@@ -172,7 +205,9 @@ export default function LibraryPage({ settings, update }: Props) {
           </section>
         )}
 
-        {books.length === 0 && !pending ? (
+        {loading ? (
+          <p className="muted empty">Bibliothek wird geladen …</p>
+        ) : books.length === 0 && !pending ? (
           <p className="muted empty">Noch keine Bücher. Lade oben deine erste Datei hoch.</p>
         ) : (
           <ul className="books">
@@ -207,7 +242,11 @@ export default function LibraryPage({ settings, update }: Props) {
             })}
           </ul>
         )}
-        <p className="muted footnote">Version 1: Deine Bücher werden in diesem Browser gespeichert. Die Synchronisation über mehrere Geräte folgt.</p>
+        <p className="muted footnote">
+          {session
+            ? `Angemeldet als ${session.user.email}: Bücher, Lesestand und Lernkarten sind auf allen deinen Geräten gleich.`
+            : 'Ohne Anmeldung bleiben deine Bücher nur in diesem Browser. Melde dich oben an, um sie auf allen Geräten zu haben.'}
+        </p>
       </main>
     </div>
   )

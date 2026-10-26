@@ -19,7 +19,14 @@ export default function CardsPage({ settings, update }: Props) {
   const [cards, setCards] = useState<Card[]>([])
   const [revealed, setRevealed] = useState(false)
 
-  const refresh = useCallback(async () => setCards(await listCards()), [])
+  const [error, setError] = useState<string | null>(null)
+  const refresh = useCallback(async () => {
+    try {
+      setCards(await listCards())
+    } catch (e) {
+      setError(`Lernkarten konnten nicht geladen werden: ${e instanceof Error ? e.message : e}`)
+    }
+  }, [])
   useEffect(() => {
     refresh()
   }, [refresh])
@@ -29,7 +36,11 @@ export default function CardsPage({ settings, update }: Props) {
 
   async function answer(knew: boolean) {
     if (!current) return
-    await saveCard(review(current, knew))
+    try {
+      await saveCard(review(current, knew))
+    } catch (e) {
+      setError(`Speichern fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+    }
     setRevealed(false)
     await refresh()
   }
@@ -57,6 +68,7 @@ export default function CardsPage({ settings, update }: Props) {
           </p>
         </section>
 
+        {error && <p className="error">{error}</p>}
         {current ? (
           <section className="card review">
             <span className="eyebrow">

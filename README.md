@@ -23,9 +23,17 @@ Du lädst ein Buch als PDF (E-Book mit Text) oder Markdown hoch und liest es auf
 - Die umgewandelte `.md` lässt sich herunterladen
 - Gescannte PDFs (ohne Text) werden erkannt; Texterkennung folgt später
 
-## Speicher
+## Speicher und Sync
 
-Version 1 speichert Bücher, Lesestand und Lernkarten im Browser (IndexedDB). Der Zugriff läuft über `src/lib/storage.ts`, damit dort später Supabase für die Synchronisation über mehrere Geräte eingesetzt werden kann.
+- **Ohne Anmeldung** bleiben Bücher, Lesestand und Lernkarten im Browser (IndexedDB).
+- **Mit Anmeldung** (E-Mail-Link, ohne Passwort) liegt alles in [Supabase](https://supabase.com) und ist auf allen Geräten gleich. Bücher, die vorher nur im Browser lagen, werden beim Anmelden übernommen. Buchtexte werden zusätzlich im Browser zwischengespeichert.
+- Zugriff läuft über `src/lib/storage.ts` (lokal) und `src/lib/cloud.ts` (Supabase).
+
+### Supabase einrichten (einmalig)
+
+1. Im Supabase-Dashboard unter *SQL Editor* den Inhalt von [`supabase/schema.sql`](supabase/schema.sql) ausführen. Das legt die Tabellen `books`, `progress`, `cards` und den privaten Bucket `books` an, jeweils mit Row Level Security: Jede Person sieht nur ihre eigenen Daten.
+2. Unter *Authentication → URL Configuration* die Vercel-Adresse als *Site URL* eintragen und die Vorschau-Adressen als *Redirect URL* erlauben (z. B. `https://*-kodi18.vercel.app/**`).
+3. Projekt-URL und „publishable“-Schlüssel stehen in `src/lib/supabase.ts` und lassen sich mit `VITE_SUPABASE_URL` und `VITE_SUPABASE_PUBLISHABLE_KEY` überschreiben. Der publishable-Schlüssel ist für den Browser gedacht und darf öffentlich sein.
 
 ## Entwicklung
 
