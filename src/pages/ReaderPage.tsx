@@ -61,8 +61,10 @@ export default function ReaderPage({ settings, update }: Props) {
     let cancelled = false
     ;(async () => {
       let data: Awaited<ReturnType<typeof getBook>>
+      let p: Progress
       try {
         data = await getBook(id)
+        p = await getProgress(id)
       } catch (e) {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e))
         return
@@ -73,8 +75,6 @@ export default function ReaderPage({ settings, update }: Props) {
         return
       }
       const parsed = parseMarkdown(data.markdown)
-      const p = await getProgress(id)
-      if (cancelled) return
       setMeta(data.meta)
       setBook(parsed)
       setProgress(p)
@@ -106,9 +106,18 @@ export default function ReaderPage({ settings, update }: Props) {
   // Lesestand speichern (gedrosselt)
   const progressRef = useRef(progress)
   progressRef.current = progress
+  const syncWarned = useRef(false)
   useEffect(() => {
     if (!progress) return
-    const t = setTimeout(() => saveProgress(id, { ...progress, pos }).catch(() => {}), 1500)
+    const t = setTimeout(
+      () =>
+        saveProgress(id, { ...progress, pos }).catch(() => {
+          // Der Lesestand liegt dann nur in diesem Browser; einmal pro Buch Bescheid geben
+          if (!syncWarned.current) showToast('Lesestand nur lokal gespeichert, Sync gerade nicht erreichbar')
+          syncWarned.current = true
+        }),
+      1500,
+    )
     return () => clearTimeout(t)
   }, [id, pos, progress])
   useEffect(
@@ -228,7 +237,9 @@ export default function ReaderPage({ settings, update }: Props) {
         await saveCard(newCard(meta.id, meta.title, `Was ist der Kernpunkt von „${s.title}“?`, answer.trim()))
         showToast('Lernkarte gespeichert')
       } catch {
-        showToast('Lernkarte konnte nicht gespeichert werden')
+        // Abfrage offen lassen, damit die Antwort nicht verloren geht
+        showToast('Lernkarte konnte nicht gespeichert werden, bitte nochmal versuchen')
+        return
       }
     }
     markProgress({ recalled: [...progress.recalled, overlay.section] })

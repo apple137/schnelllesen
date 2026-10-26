@@ -120,14 +120,22 @@ export async function deleteBook(id: string): Promise<void> {
 }
 
 export async function getProgress(id: string): Promise<Progress> {
-  if (userId) return (await cloud.cloudGetProgress(id)) ?? EMPTY_PROGRESS
-  return (await localProgress(id)) ?? EMPTY_PROGRESS
+  const local = await localProgress(id)
+  if (!userId) return local ?? EMPTY_PROGRESS
+  const remote = await cloud.cloudGetProgress(id)
+  // Konnte ein Stand nicht hochgeladen werden, ist die lokale Kopie neuer
+  if (local && (!remote || local.updated > remote.updated)) {
+    cloud.cloudSaveProgress(userId, id, local).catch(() => {})
+    return local
+  }
+  return remote ?? local ?? EMPTY_PROGRESS
 }
 
+/** Speichert immer auch lokal, damit ein fehlgeschlagener Upload keinen Lesestand kostet. */
 export async function saveProgress(id: string, p: Progress): Promise<void> {
   const next = { ...p, updated: Date.now() }
-  if (userId) return cloud.cloudSaveProgress(userId, id, next)
   await set(`progress:${id}`, next, store)
+  if (userId) await cloud.cloudSaveProgress(userId, id, next)
 }
 
 export async function listCards(): Promise<Card[]> {
