@@ -46,6 +46,7 @@ export default function ReaderPage({ settings, update }: Props) {
   const [book, setBook] = useState<ParsedBook | null>(null)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [missing, setMissing] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [chunkIdx, setChunkIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [overlay, setOverlay] = useState<Overlay>(null)
@@ -59,19 +60,25 @@ export default function ReaderPage({ settings, update }: Props) {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const data = await getBook(id)
+      let data: Awaited<ReturnType<typeof getBook>>
+      let p: Progress
+      try {
+        data = await getBook(id)
+        p = await getProgress(id)
+      } catch (e) {
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e))
+        return
+      }
       if (cancelled) return
       if (!data) {
         setMissing(true)
         return
       }
       const parsed = parseMarkdown(data.markdown)
-      const p = await getProgress(id)
-      if (cancelled) return
       setMeta(data.meta)
       setBook(parsed)
       setProgress(p)
-      touchBook(id)
+      touchBook(id).catch(() => {})
     })()
     return () => {
       cancelled = true
@@ -99,14 +106,23 @@ export default function ReaderPage({ settings, update }: Props) {
   // Lesestand speichern (gedrosselt)
   const progressRef = useRef(progress)
   progressRef.current = progress
+  const syncWarned = useRef(false)
   useEffect(() => {
     if (!progress) return
-    const t = setTimeout(() => saveProgress(id, { ...progress, pos }), 1500)
+    const t = setTimeout(
+      () =>
+        saveProgress(id, { ...progress, pos }).catch(() => {
+          // Der Lesestand liegt dann nur in diesem Browser; einmal pro Buch Bescheid geben
+          if (!syncWarned.current) showToast('Lesestand nur lokal gespeichert, Sync gerade nicht erreichbar')
+          syncWarned.current = true
+        }),
+      1500,
+    )
     return () => clearTimeout(t)
   }, [id, pos, progress])
   useEffect(
     () => () => {
-      if (progressRef.current) saveProgress(id, { ...progressRef.current, pos: posRef.current })
+      if (progressRef.current) saveProgress(id, { ...progressRef.current, pos: posRef.current }).catch(() => {})
     },
     [id],
   )
@@ -217,8 +233,14 @@ export default function ReaderPage({ settings, update }: Props) {
     if (overlay?.kind !== 'recall' || !book || !meta || !progress) return
     const s = book.sections[overlay.section]
     if (save && answer.trim()) {
-      await saveCard(newCard(meta.id, meta.title, `Was ist der Kernpunkt von „${s.title}“?`, answer.trim()))
-      showToast('Lernkarte gespeichert')
+      try {
+        await saveCard(newCard(meta.id, meta.title, `Was ist der Kernpunkt von „${s.title}“?`, answer.trim()))
+        showToast('Lernkarte gespeichert')
+      } catch {
+        // Abfrage offen lassen, damit die Antwort nicht verloren geht
+        showToast('Lernkarte konnte nicht gespeichert werden, bitte nochmal versuchen')
+        return
+      }
     }
     markProgress({ recalled: [...progress.recalled, overlay.section] })
     setOverlay(null)
@@ -253,8 +275,12 @@ export default function ReaderPage({ settings, update }: Props) {
     })
     const hidden = clean(words[gap])
     const front = words.map((w, i) => (i === gap ? w.replace(hidden, '_____') : w)).join(' ')
-    await saveCard(newCard(meta.id, meta.title, front, `${hidden}\n\n${words.join(' ')}`))
-    showToast('Satz als Lernkarte gemerkt')
+    try {
+      await saveCard(newCard(meta.id, meta.title, front, `${hidden}\n\n${words.join(' ')}`))
+      showToast('Satz als Lernkarte gemerkt')
+    } catch {
+      showToast('Lernkarte konnte nicht gespeichert werden')
+    }
   }, [book, meta, pos])
 
   // Tastatur
@@ -307,11 +333,11 @@ export default function ReaderPage({ settings, update }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [overlay, playing, play, pause, jumpSentence, remember, finishPreview, settings.wpm, update])
 
-  if (missing) {
+  if (missing || loadError) {
     return (
       <div className="page reader">
         <main className="container">
-          <p>Dieses Buch wurde nicht gefunden.</p>
+          <p>{loadError ? `Das Buch konnte nicht geladen werden: ${loadError}` : 'Dieses Buch wurde nicht gefunden.'}</p>
           <Link to="/">Zur Bibliothek</Link>
         </main>
       </div>

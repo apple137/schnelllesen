@@ -647,3 +647,39 @@ input[type='range'] {
   padding: 0.75rem 0 0.25rem;
   margin-top: 0.25rem;
 }
+
+.loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+.account {
+  gap: 0.4rem;
+}
+.avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.notice {
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+@media (max-width: 560px) {
+  .account-label {
+    display: none;
+  }
+}
